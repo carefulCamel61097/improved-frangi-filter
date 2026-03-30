@@ -283,13 +283,21 @@ function loadImageFromElement(img) {
   ctx.drawImage(img, 0, 0);
   const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
 
+  // Keep RGBA in [0, 255] — Python will do the grayscale conversion
+  // exactly like generate_figures.py (np.mean, no division by 255)
   const n = img.width * img.height;
+  const rgbaFloat = new Float64Array(n * 4);
+  for (let i = 0; i < n * 4; i++) {
+    rgbaFloat[i] = rgba[i];
+  }
+
+  // Also keep a grayscale [0,1] copy for displaying the original
   const gray = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
   }
 
-  loadedImageData = { gray, w: img.width, h: img.height };
+  loadedImageData = { rgbaFloat, gray, w: img.width, h: img.height };
   runBtn.disabled = false;
   statusEl.textContent = `Loaded: ${img.width} x ${img.height} pixels`;
 }
@@ -352,7 +360,7 @@ runBtn.addEventListener("click", () => {
 async function runFilter() {
   if (!await ensurePyodide()) return;
 
-  const { gray, w, h } = loadedImageData;
+  const { rgbaFloat, gray, w, h } = loadedImageData;
   const sigmaMin = +document.getElementById("sigmaMin").value;
   const sigmaMax = +document.getElementById("sigmaMax").value;
   const beta1 = +document.getElementById("beta1").value;
@@ -363,8 +371,8 @@ async function runFilter() {
   try {
     statusEl.textContent = `Running filter on ${w}x${h} image (sigma ${sigmaMin}-${sigmaMax})...`;
 
-    // Pass image data to Python
-    pyodide.globals.set("_img_flat", pyodide.toPy(Array.from(gray)));
+    // Pass RGBA image data to Python (values in [0, 255])
+    pyodide.globals.set("_img_flat", pyodide.toPy(Array.from(rgbaFloat)));
     pyodide.globals.set("_img_w", w);
     pyodide.globals.set("_img_h", h);
     pyodide.globals.set("_sigma_min", sigmaMin);
@@ -377,12 +385,18 @@ async function runFilter() {
     const t0 = performance.now();
 
     // Run the exact same Python code as generate_figures.py,
-    // then apply matplotlib's hot colormap for identical rendering
+    // then apply matplotlib's hot colormap for identical rendering.
+    //
+    // Critical: pass RGBA [0-255] and let Python do the grayscale
+    // conversion the same way as generate_figures.py (np.mean, no /255).
     await pyodide.runPythonAsync(`
 import numpy as np
 import matplotlib.pyplot as plt
 
-_image = np.array(_img_flat, dtype=np.float64).reshape(_img_h, _img_w)
+# Reconstruct RGBA from JS, then convert to grayscale exactly like
+# generate_figures.py: np.mean across channels, keeping [0, 255] range
+_rgba_img = np.array(_img_flat, dtype=np.float64).reshape(_img_h, _img_w, 4)
+_image = np.mean(_rgba_img[:, :, :3], axis=2)  # [0, 255] range, equal-weight grayscale
 
 _result = frangi_2d(
     _image,
@@ -399,8 +413,8 @@ _result = frangi_2d(
 # Apply matplotlib's hot colormap — identical to imshow(data, cmap='hot')
 _hot = plt.get_cmap('hot')
 _norm = plt.Normalize(vmin=_result.min(), vmax=_result.max())
-_rgba = _hot(_norm(_result))  # (H, W, 4) float in [0, 1]
-_rgba_uint8 = (_rgba * 255).astype(np.uint8).ravel().tolist()
+_rgba_out = _hot(_norm(_result))  # (H, W, 4) float in [0, 1]
+_rgba_uint8 = (_rgba_out * 255).astype(np.uint8).ravel().tolist()
 `);
 
     const t1 = performance.now();
