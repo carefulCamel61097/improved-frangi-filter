@@ -131,6 +131,17 @@
     width: 100%;
     height: auto;
   }
+  .download-btn {
+    display: block;
+    text-align: center;
+    padding: .4rem;
+    font-size: .8rem;
+    color: #6ea8fe;
+    text-decoration: none;
+    border-top: 1px solid #222;
+    background: #13151b;
+  }
+  .download-btn:hover { background: #1a1d27; }
 
   footer {
     text-align: center;
@@ -630,6 +641,13 @@ function showVesselness(title, data, w, h) {
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
   card.appendChild(canvas);
+
+  const dlBtn = document.createElement("a");
+  dlBtn.className = "download-btn";
+  dlBtn.textContent = "Download";
+  dlBtn.download = "frangi_result.png";
+  card.appendChild(dlBtn);
+
   resultsEl.appendChild(card);
 
   const ctx = canvas.getContext("2d");
@@ -646,6 +664,8 @@ function showVesselness(title, data, w, h) {
     imgData.data[i*4] = r; imgData.data[i*4+1] = g; imgData.data[i*4+2] = b; imgData.data[i*4+3] = 255;
   }
   ctx.putImageData(imgData, 0, 0);
+
+  dlBtn.href = canvas.toDataURL("image/png");
 }
 </script>
 </body>
