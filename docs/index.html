@@ -107,10 +107,10 @@
 
   .results {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
     padding: 1rem;
-    max-width: 1400px;
+    max-width: 1100px;
     margin: 0 auto;
   }
   .result-card {
@@ -563,7 +563,7 @@ const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
 let loadedImage = null;  // { data: Float64Array, w, h }
-const MAX_PIXELS = 400 * 400;  // auto-downscale above this
+const MAX_PIXELS = 512 * 512;  // auto-downscale above this
 
 // --- Drop zone ---
 dropZone.addEventListener("click", () => fileInput.click());
@@ -677,25 +677,39 @@ function runFilter() {
 
   const t0 = performance.now();
 
-  const plain = frangi2D(data, w, h, { ...opts, mode: "plain" });
+  const full = frangi2D(data, w, h, { ...opts, mode: "full" });
   const t1 = performance.now();
 
-  const normalized = frangi2D(data, w, h, { ...opts, mode: "normalized" });
-  const t2 = performance.now();
+  statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
 
-  const full = frangi2D(data, w, h, { ...opts, mode: "full" });
-  const t3 = performance.now();
-
-  const times = [t1-t0, t2-t1, t3-t2].map(t => (t/1000).toFixed(1));
-  statusEl.textContent = `Done in ${((t3-t0)/1000).toFixed(1)}s (plain: ${times[0]}s, +S3: ${times[1]}s, +S3+DS: ${times[2]}s)`;
-
-  // Show results
+  // Show results: original + improved Frangi
   showResult("Original", data, w, h, false);
-  showResult("Standard Frangi", plain, w, h, true);
-  showResult("+ Local Normalization (S3)", normalized, w, h, true);
-  showResult("+ S3 + Weighted Dominant Scale", full, w, h, true);
+  showResult("Improved Frangi (S3 + Weighted Dominant Scale)", full, w, h, true);
 
   runBtn.disabled = false;
+}
+
+/**
+ * "Hot" colormap: black -> red -> yellow -> white (matches matplotlib's "hot").
+ * Input: t in [0, 1]. Output: [r, g, b] each in [0, 255].
+ */
+function hotColormap(t) {
+  // Black (0) -> Red (0.33) -> Yellow (0.66) -> White (1.0)
+  let r, g, b;
+  if (t < 0.33) {
+    r = t / 0.33;
+    g = 0;
+    b = 0;
+  } else if (t < 0.66) {
+    r = 1;
+    g = (t - 0.33) / 0.33;
+    b = 0;
+  } else {
+    r = 1;
+    g = 1;
+    b = (t - 0.66) / 0.34;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
 function showResult(title, data, w, h, isVesselness) {
@@ -722,15 +736,18 @@ function showResult(title, data, w, h, isVesselness) {
   }
 
   for (let i = 0; i < data.length; i++) {
-    let v;
     if (isVesselness) {
-      v = Math.round((data[i] / maxVal) * 255);
+      const t = data[i] / maxVal;
+      const [r, g, b] = hotColormap(t);
+      imgData.data[i * 4] = r;
+      imgData.data[i * 4 + 1] = g;
+      imgData.data[i * 4 + 2] = b;
     } else {
-      v = Math.round(data[i] * 255);
+      const v = Math.round(data[i] * 255);
+      imgData.data[i * 4] = v;
+      imgData.data[i * 4 + 1] = v;
+      imgData.data[i * 4 + 2] = v;
     }
-    imgData.data[i * 4] = v;
-    imgData.data[i * 4 + 1] = v;
-    imgData.data[i * 4 + 2] = v;
     imgData.data[i * 4 + 3] = 255;
   }
   ctx.putImageData(imgData, 0, 0);
