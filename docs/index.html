@@ -59,7 +59,6 @@
   }
   .controls input[type=range] { width: 120px; accent-color: #6ea8fe; }
   .controls select { background: #1a1d27; color: #e0e0e0; border: 1px solid #333; padding: 2px 6px; border-radius: 4px; }
-  .controls .span-full { grid-column: 1 / -1; }
 
   .btn-row {
     display: flex;
@@ -131,7 +130,6 @@
     display: block;
     width: 100%;
     height: auto;
-    image-rendering: pixelated;
   }
 
   footer {
@@ -150,11 +148,11 @@
 <header>
   <h1>Frangi Vesselness Filter &mdash; Interactive Demo</h1>
   <p>
-    Upload an angiography image to compare the standard Frangi filter with
-    two improvements: local intensity normalization (S3) and weighted
-    dominant scale filtering. Runs entirely in your browser &mdash; no data
-    leaves your machine.
-    <br><a href="https://github.com/ThabisoEpworthy/Frangi-Filter-Improvement---Master-Thesis">View on GitHub</a>
+    Upload an angiography image to see the improved Frangi vesselness filter
+    in action: local intensity normalization (S3) and weighted dominant scale
+    filtering. Runs the exact Python filter in your browser via
+    <a href="https://pyodide.org">Pyodide</a> &mdash; no data leaves your machine.
+    <br><a href="https://github.com/carefulCamel61097/improved-frangi-filter">View on GitHub</a>
   </p>
 </header>
 
@@ -215,344 +213,19 @@
 </div>
 
 <footer>
-  Frangi vesselness filter with improvements. All computation runs client-side in JavaScript.
+  Frangi vesselness filter with improvements. Runs the actual Python/NumPy/SciPy code in-browser via Pyodide.
   <br>Based on: Frangi et al., <em>Multiscale vessel enhancement filtering</em> (MICCAI 1998).
-  <br><a href="https://github.com/ThabisoEpworthy/Frangi-Filter-Improvement---Master-Thesis">Source code &amp; paper</a>
+  <br><a href="https://github.com/carefulCamel61097/improved-frangi-filter">Source code &amp; paper</a>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.4/full/pyodide.js"></script>
 <script>
 // ====================================================================
-// Frangi vesselness filter — pure JavaScript implementation
+// Pyodide setup: load Python + NumPy + SciPy + our frangi_filter.py
 // ====================================================================
 
-/**
- * Gaussian 1D kernel (truncated at 4*sigma).
- */
-function gaussianKernel1D(sigma) {
-  const r = Math.ceil(sigma * 4);
-  const k = new Float64Array(2 * r + 1);
-  let sum = 0;
-  for (let i = -r; i <= r; i++) {
-    k[i + r] = Math.exp(-0.5 * (i / sigma) ** 2);
-    sum += k[i + r];
-  }
-  for (let i = 0; i < k.length; i++) k[i] /= sum;
-  return { data: k, radius: r };
-}
-
-/**
- * Separable 2D Gaussian convolution (zero-padded).
- */
-function gaussianSmooth(img, w, h, sigma) {
-  const kern = gaussianKernel1D(sigma);
-  const k = kern.data, r = kern.radius;
-  const tmp = new Float64Array(w * h);
-  const out = new Float64Array(w * h);
-
-  // Horizontal pass
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -r; i <= r; i++) {
-        const xi = Math.min(Math.max(x + i, 0), w - 1);
-        v += img[y * w + xi] * k[i + r];
-      }
-      tmp[y * w + x] = v;
-    }
-  }
-  // Vertical pass
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let v = 0;
-      for (let i = -r; i <= r; i++) {
-        const yi = Math.min(Math.max(y + i, 0), h - 1);
-        v += tmp[yi * w + x] * k[i + r];
-      }
-      out[y * w + x] = v;
-    }
-  }
-  return out;
-}
-
-/**
- * Compute gradient along axis (0=vertical, 1=horizontal) via central differences.
- */
-function gradient(img, w, h, axis) {
-  const out = new Float64Array(w * h);
-  if (axis === 1) {
-    // Horizontal
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const xp = Math.min(x + 1, w - 1);
-        const xm = Math.max(x - 1, 0);
-        out[y * w + x] = (img[y * w + xp] - img[y * w + xm]) / (xp - xm || 1);
-      }
-    }
-  } else {
-    // Vertical
-    for (let y = 0; y < h; y++) {
-      const yp = Math.min(y + 1, h - 1);
-      const ym = Math.max(y - 1, 0);
-      for (let x = 0; x < w; x++) {
-        out[y * w + x] = (img[yp * w + x] - img[ym * w + x]) / (yp - ym || 1);
-      }
-    }
-  }
-  return out;
-}
-
-/**
- * Local maximum / minimum filter (square window) — separable for speed.
- * Two 1D passes (horizontal then vertical) instead of one 2D pass.
- * O(n * size) instead of O(n * size^2).
- */
-function maxFilter(img, w, h, size) {
-  const r = Math.floor(size / 2);
-  const tmp = new Float64Array(w * h);
-  const out = new Float64Array(w * h);
-  // Horizontal pass
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let mx = -Infinity;
-      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
-      for (let xx = x0; xx <= x1; xx++) mx = Math.max(mx, img[y * w + xx]);
-      tmp[y * w + x] = mx;
-    }
-  }
-  // Vertical pass
-  for (let y = 0; y < h; y++) {
-    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
-    for (let x = 0; x < w; x++) {
-      let mx = -Infinity;
-      for (let yy = y0; yy <= y1; yy++) mx = Math.max(mx, tmp[yy * w + x]);
-      out[y * w + x] = mx;
-    }
-  }
-  return out;
-}
-
-function minFilter(img, w, h, size) {
-  const r = Math.floor(size / 2);
-  const tmp = new Float64Array(w * h);
-  const out = new Float64Array(w * h);
-  // Horizontal pass
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let mn = Infinity;
-      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
-      for (let xx = x0; xx <= x1; xx++) mn = Math.min(mn, img[y * w + xx]);
-      tmp[y * w + x] = mn;
-    }
-  }
-  // Vertical pass
-  for (let y = 0; y < h; y++) {
-    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
-    for (let x = 0; x < w; x++) {
-      let mn = Infinity;
-      for (let yy = y0; yy <= y1; yy++) mn = Math.min(mn, tmp[yy * w + x]);
-      out[y * w + x] = mn;
-    }
-  }
-  return out;
-}
-
-/**
- * Run Frangi filter at a single sigma. Returns { response, normResponse }.
- */
-function frangiAtScale(img, w, h, sigma, beta1, beta2, brightOnDark, localNorm) {
-  const s2 = sigma * sigma;
-  const smoothed = gaussianSmooth(img, w, h, sigma);
-
-  // Hessian via second-order derivatives
-  const dx = gradient(smoothed, w, h, 1);
-  const dy = gradient(smoothed, w, h, 0);
-  const Hxx = gradient(dx, w, h, 1);
-  const Hyy = gradient(dy, w, h, 0);
-  const Hxy = gradient(dx, w, h, 0);
-
-  // Scale normalization
-  const n = w * h;
-  for (let i = 0; i < n; i++) { Hxx[i] *= s2; Hyy[i] *= s2; Hxy[i] *= s2; }
-
-  const response = new Float64Array(n);
-
-  for (let i = 0; i < n; i++) {
-    const trace = Hxx[i] + Hyy[i];
-    const det = Hxx[i] * Hyy[i] - Hxy[i] * Hxy[i];
-    const disc = Math.sqrt(Math.max((trace / 2) ** 2 - det, 0));
-
-    let eig1 = trace / 2 + disc;
-    let eig2 = trace / 2 - disc;
-
-    // Sort so |lambda1| <= |lambda2|
-    if (Math.abs(eig1) > Math.abs(eig2)) {
-      [eig1, eig2] = [eig2, eig1];
-    }
-
-    // Polarity check
-    if (brightOnDark ? eig2 >= 0 : eig2 <= 0) { response[i] = 0; continue; }
-
-    const lambda2Safe = eig2 === 0 ? 1e-10 : eig2;
-    const S1 = (eig1 / lambda2Safe) ** 2;
-    const S2 = eig1 ** 2 + eig2 ** 2;
-
-    response[i] = Math.exp(-S1 / beta1) * (1 - Math.exp(-S2 / beta2));
-  }
-
-  // Local normalization (S3)
-  let normResponse;
-  if (localNorm) {
-    const kSize = 6 * sigma + 1;
-    const Imax = maxFilter(img, w, h, kSize);
-    const Imin = minFilter(img, w, h, kSize);
-    normResponse = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const denom = Imax[i] - Imin[i];
-      if (denom > 0) {
-        const s3 = brightOnDark
-          ? (img[i] - Imin[i]) / denom
-          : (Imax[i] - img[i]) / denom;
-        normResponse[i] = response[i] * s3;
-      }
-    }
-  } else {
-    normResponse = response;
-  }
-
-  return { response, normResponse };
-}
-
-/**
- * Dominant scale filter: suppress scale outliers using local consensus.
- */
-function dominantScaleFilter(responses, winningSigmas, nSigmas, w, h,
-                              outerSize, innerSize, threshold, weights) {
-  const n = w * h;
-  const vesselness = new Float64Array(n);
-  // Start from max across scales
-  for (let i = 0; i < n; i++) {
-    for (let s = 0; s < nSigmas; s++) {
-      vesselness[i] = Math.max(vesselness[i], responses[s][i]);
-    }
-  }
-
-  const pad = Math.floor(outerSize / 2);
-
-  for (let y = 0; y < h; y += innerSize) {
-    for (let x = 0; x < w; x += innerSize) {
-      // Outer window: count sigma votes
-      const counts = new Float64Array(nSigmas);
-      for (let dy = -pad; dy < outerSize - pad; dy++) {
-        const yy = Math.min(Math.max(y + dy, 0), h - 1);
-        for (let dx = -pad; dx < outerSize - pad; dx++) {
-          const xx = Math.min(Math.max(x + dx, 0), w - 1);
-          const idx = yy * w + xx;
-          const s = winningSigmas[idx];
-          if (weights) {
-            counts[s] += weights[idx];
-          } else {
-            counts[s] += 1;
-          }
-        }
-      }
-
-      let maxCount = 0;
-      for (let s = 0; s < nSigmas; s++) maxCount = Math.max(maxCount, counts[s]);
-      if (maxCount === 0) continue;
-
-      const minCount = maxCount * threshold;
-      const allowed = new Set();
-      for (let s = 0; s < nSigmas; s++) {
-        if (counts[s] >= minCount) allowed.add(s);
-      }
-
-      // Inner region: restrict to allowed scales
-      const iy2 = Math.min(y + innerSize, h);
-      const ix2 = Math.min(x + innerSize, w);
-      for (let iy = y; iy < iy2; iy++) {
-        for (let ix = x; ix < ix2; ix++) {
-          let best = 0;
-          for (const s of allowed) {
-            best = Math.max(best, responses[s][iy * w + ix]);
-          }
-          vesselness[iy * w + ix] = best;
-        }
-      }
-    }
-  }
-  return vesselness;
-}
-
-/**
- * Full Frangi 2D filter.
- * mode: "plain" | "normalized" | "full"
- */
-function frangi2D(img, w, h, {
-  sigmaMin = 2, sigmaMax = 7,
-  beta1 = 0.5, beta2 = 15,
-  brightOnDark = true,
-  mode = "plain",
-  dsThreshold = 0.5,
-} = {}) {
-  const sigmas = [];
-  for (let s = sigmaMin; s <= sigmaMax; s++) sigmas.push(s);
-  const nSigmas = sigmas.length;
-  const n = w * h;
-
-  const localNorm = mode === "normalized" || mode === "full";
-  const doDominant = mode === "full";
-
-  const rawResponses = [];
-  const normResponses = [];
-
-  for (const sigma of sigmas) {
-    const { response, normResponse } = frangiAtScale(
-      img, w, h, sigma, beta1, beta2, brightOnDark, localNorm);
-    rawResponses.push(response);
-    normResponses.push(normResponse);
-  }
-
-  const outputResponses = localNorm ? normResponses : rawResponses;
-
-  if (doDominant) {
-    // Determine winning sigmas from post-norm responses
-    const analysisResponses = normResponses;
-    const winningSigmas = new Uint8Array(n);
-    const maxResponse = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      let best = 0, bestS = 0;
-      for (let s = 0; s < nSigmas; s++) {
-        if (analysisResponses[s][i] > best) {
-          best = analysisResponses[s][i];
-          bestS = s;
-        }
-      }
-      winningSigmas[i] = bestS;
-      maxResponse[i] = best;
-    }
-
-    const outerSize = 6 * sigmas[nSigmas - 1] + 1;
-    const innerSize = 6 * sigmas[0] + 1;
-
-    return dominantScaleFilter(
-      outputResponses, winningSigmas, nSigmas, w, h,
-      outerSize, innerSize, dsThreshold, maxResponse);
-  } else {
-    // Max across scales
-    const vesselness = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      for (let s = 0; s < nSigmas; s++) {
-        vesselness[i] = Math.max(vesselness[i], outputResponses[s][i]);
-      }
-    }
-    return vesselness;
-  }
-}
-
-
-// ====================================================================
-// UI
-// ====================================================================
+let pyodide = null;
+let pyodideReady = false;
 
 const dropZone = document.getElementById("dropZone");
 const fileInput = document.getElementById("fileInput");
@@ -562,10 +235,36 @@ const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
-let loadedImage = null;  // { data: Float64Array, w, h }
-const MAX_PIXELS = Infinity;  // no downscaling — full resolution
+let loadedImageData = null;  // { gray: Float64Array, w, h }
 
-// --- Drop zone ---
+async function ensurePyodide() {
+  if (pyodideReady) return true;
+
+  try {
+    statusEl.textContent = "Loading Python environment (~10 MB, cached after first visit)...";
+    pyodide = await loadPyodide();
+    statusEl.textContent = "Installing NumPy and SciPy...";
+    await pyodide.loadPackage(["numpy", "scipy"]);
+
+    statusEl.textContent = "Loading Frangi filter code...";
+    const response = await fetch("frangi_filter.py");
+    const code = await response.text();
+    pyodide.runPython(code);
+
+    pyodideReady = true;
+    return true;
+  } catch (e) {
+    statusEl.textContent = "Failed to load Python environment: " + e.message;
+    console.error(e);
+    return false;
+  }
+}
+
+
+// ====================================================================
+// Image loading
+// ====================================================================
+
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
 dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
@@ -576,60 +275,23 @@ dropZone.addEventListener("drop", e => {
 });
 fileInput.addEventListener("change", () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
 
-// --- Example button ---
-exampleBtn.addEventListener("click", () => {
-  statusEl.textContent = "Loading example DSA image...";
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    loadImageFromElement(img);
-    dropZone.querySelector("p").textContent = "dsa_sample.jpg (example)";
-
-    // Auto-set polarity to dark-on-bright for the DSA example
-    document.getElementById("polarity").value = "dark";
-
-    // Auto-run
-    runBtn.disabled = true;
-    statusEl.textContent = "Computing (may take 30-60s at full resolution)...";
-    resultsEl.innerHTML = "";
-    exampleSection.style.display = "none";
-    requestAnimationFrame(() => setTimeout(runFilter, 50));
-  };
-  img.onerror = () => { statusEl.textContent = "Failed to load example image."; };
-  img.src = "dsa_sample.jpg";
-});
-
 function loadImageFromElement(img) {
-  let drawW = img.width, drawH = img.height;
-  const totalPixels = drawW * drawH;
-  let downscaled = false;
-
-  if (totalPixels > MAX_PIXELS) {
-    const scale = Math.sqrt(MAX_PIXELS / totalPixels);
-    drawW = Math.round(drawW * scale);
-    drawH = Math.round(drawH * scale);
-    downscaled = true;
-  }
-
   const canvas = document.createElement("canvas");
-  canvas.width = drawW;
-  canvas.height = drawH;
+  canvas.width = img.width;
+  canvas.height = img.height;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0, drawW, drawH);
-  const rgba = ctx.getImageData(0, 0, drawW, drawH).data;
+  ctx.drawImage(img, 0, 0);
+  const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
 
-  const n = drawW * drawH;
+  const n = img.width * img.height;
   const gray = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
   }
 
-  loadedImage = { data: gray, w: drawW, h: drawH };
+  loadedImageData = { gray, w: img.width, h: img.height };
   runBtn.disabled = false;
-  const sizeNote = downscaled
-    ? `${img.width}x${img.height} -> ${drawW}x${drawH} (downscaled for speed)`
-    : `${drawW} x ${drawH} pixels`;
-  statusEl.textContent = `Loaded: ${sizeNote}`;
+  statusEl.textContent = `Loaded: ${img.width} x ${img.height} pixels`;
 }
 
 function handleFile(file) {
@@ -645,70 +307,133 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
-// --- Slider labels ---
+// Example button
+exampleBtn.addEventListener("click", () => {
+  statusEl.textContent = "Loading example DSA image...";
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    loadImageFromElement(img);
+    dropZone.querySelector("p").textContent = "dsa_sample.jpg (example)";
+    document.getElementById("polarity").value = "dark";
+
+    // Auto-run
+    runBtn.disabled = true;
+    exampleBtn.disabled = true;
+    resultsEl.innerHTML = "";
+    exampleSection.style.display = "none";
+    runFilter();
+  };
+  img.onerror = () => { statusEl.textContent = "Failed to load example image."; };
+  img.src = "dsa_sample.jpg";
+});
+
+// Slider labels
 for (const id of ["sigmaMin", "sigmaMax", "beta1", "beta2", "dsThreshold"]) {
   const el = document.getElementById(id);
   const label = document.getElementById(id + "Val");
   el.addEventListener("input", () => { label.textContent = el.value; });
 }
 
-// --- Run ---
-runBtn.addEventListener("click", () => {
-  if (!loadedImage) return;
-  runBtn.disabled = true;
-  statusEl.textContent = "Computing...";
-  resultsEl.innerHTML = "";
 
+// ====================================================================
+// Run filter via Pyodide
+// ====================================================================
+
+runBtn.addEventListener("click", () => {
+  if (!loadedImageData) return;
+  runBtn.disabled = true;
+  exampleBtn.disabled = true;
+  resultsEl.innerHTML = "";
   exampleSection.style.display = "none";
-  // Defer to allow UI update
-  requestAnimationFrame(() => setTimeout(runFilter, 50));
+  runFilter();
 });
 
-function runFilter() {
-  const { data, w, h } = loadedImage;
-  const opts = {
-    sigmaMin: +document.getElementById("sigmaMin").value,
-    sigmaMax: +document.getElementById("sigmaMax").value,
-    beta1: +document.getElementById("beta1").value,
-    beta2: +document.getElementById("beta2").value,
-    brightOnDark: document.getElementById("polarity").value === "bright",
-    dsThreshold: +document.getElementById("dsThreshold").value,
-  };
+async function runFilter() {
+  if (!await ensurePyodide()) return;
 
-  const t0 = performance.now();
+  const { gray, w, h } = loadedImageData;
+  const sigmaMin = +document.getElementById("sigmaMin").value;
+  const sigmaMax = +document.getElementById("sigmaMax").value;
+  const beta1 = +document.getElementById("beta1").value;
+  const beta2 = +document.getElementById("beta2").value;
+  const brightOnDark = document.getElementById("polarity").value === "bright";
+  const dsThreshold = +document.getElementById("dsThreshold").value;
 
-  const full = frangi2D(data, w, h, { ...opts, mode: "full" });
-  const t1 = performance.now();
+  try {
+    statusEl.textContent = `Running filter on ${w}x${h} image (sigma ${sigmaMin}-${sigmaMax})...`;
 
-  statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
+    // Pass image data to Python
+    pyodide.globals.set("_img_flat", pyodide.toPy(Array.from(gray)));
+    pyodide.globals.set("_img_w", w);
+    pyodide.globals.set("_img_h", h);
+    pyodide.globals.set("_sigma_min", sigmaMin);
+    pyodide.globals.set("_sigma_max", sigmaMax);
+    pyodide.globals.set("_beta1", beta1);
+    pyodide.globals.set("_beta2", beta2);
+    pyodide.globals.set("_bright_on_dark", brightOnDark);
+    pyodide.globals.set("_ds_threshold", dsThreshold);
 
-  // Show results: original + improved Frangi
-  showResult("Original", data, w, h, false);
-  showResult("Improved Frangi (S3 + Weighted Dominant Scale)", full, w, h, true);
+    const t0 = performance.now();
+
+    // Run the exact same Python code as generate_figures.py
+    await pyodide.runPythonAsync(`
+import numpy as np
+
+_image = np.array(_img_flat, dtype=np.float64).reshape(_img_h, _img_w)
+
+_result = frangi_2d(
+    _image,
+    sigma_range=(_sigma_min, _sigma_max),
+    beta1=_beta1,
+    beta2=_beta2,
+    bright_on_dark=_bright_on_dark,
+    local_normalization=True,
+    dominant_scale=True,
+    dominant_scale_weighted=True,
+    dominant_scale_threshold=_ds_threshold,
+)
+
+_result_flat = _result.ravel().tolist()
+`);
+
+    const t1 = performance.now();
+
+    // Get result back from Python
+    const resultList = pyodide.globals.get("_result_flat");
+    const resultArray = new Float64Array(resultList.toJs());
+    resultList.destroy();
+
+    statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
+
+    // Show results
+    showResult("Original", gray, w, h, false);
+    showResult("Improved Frangi (S3 + Weighted Dominant Scale)", resultArray, w, h, true);
+
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+    console.error(e);
+  }
 
   runBtn.disabled = false;
+  exampleBtn.disabled = false;
 }
 
+
+// ====================================================================
+// Display with hot colormap
+// ====================================================================
+
 /**
- * "Hot" colormap: black -> red -> yellow -> white (matches matplotlib's "hot").
- * Input: t in [0, 1]. Output: [r, g, b] each in [0, 255].
+ * "Hot" colormap matching matplotlib's "hot".
+ * 0.0 = black, ~0.33 = red, ~0.66 = yellow, 1.0 = white.
  */
 function hotColormap(t) {
-  // Black (0) -> Red (0.33) -> Yellow (0.66) -> White (1.0)
   let r, g, b;
-  if (t < 0.33) {
-    r = t / 0.33;
-    g = 0;
-    b = 0;
-  } else if (t < 0.66) {
-    r = 1;
-    g = (t - 0.33) / 0.33;
-    b = 0;
-  } else {
-    r = 1;
-    g = 1;
-    b = (t - 0.66) / 0.34;
-  }
+  // These breakpoints match matplotlib's hot colormap
+  r = Math.min(1, t / 0.3652);
+  g = Math.max(0, Math.min(1, (t - 0.3652) / 0.3652));
+  b = Math.max(0, Math.min(1, (t - 0.7304) / 0.2696));
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
@@ -728,7 +453,6 @@ function showResult(title, data, w, h, isVesselness) {
   const ctx = canvas.getContext("2d");
   const imgData = ctx.createImageData(w, h);
 
-  // Normalize vesselness for display
   let maxVal = 0;
   if (isVesselness) {
     for (let i = 0; i < data.length; i++) maxVal = Math.max(maxVal, data[i]);
