@@ -150,8 +150,7 @@
   <p>
     Upload an angiography image to see the improved Frangi vesselness filter
     in action: local intensity normalization (S3) and weighted dominant scale
-    filtering. Runs the exact Python filter in your browser via
-    <a href="https://pyodide.org">Pyodide</a> &mdash; no data leaves your machine.
+    filtering. Runs entirely in your browser &mdash; no data leaves your machine.
     <br><a href="https://github.com/carefulCamel61097/improved-frangi-filter">View on GitHub</a>
   </p>
 </header>
@@ -213,19 +212,284 @@
 </div>
 
 <footer>
-  Frangi vesselness filter with improvements. Runs the actual Python/NumPy/SciPy code in-browser via Pyodide.
+  Frangi vesselness filter with improvements. All computation runs client-side in JavaScript.
   <br>Based on: Frangi et al., <em>Multiscale vessel enhancement filtering</em> (MICCAI 1998).
   <br><a href="https://github.com/carefulCamel61097/improved-frangi-filter">Source code &amp; paper</a>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/pyodide/v0.27.4/full/pyodide.js"></script>
 <script>
 // ====================================================================
-// Pyodide setup: load Python + NumPy + SciPy + our frangi_filter.py
+// Matplotlib "hot" colormap — exact 256-entry LUT
+// ====================================================================
+const HOT_LUT = [
+[11,0,0],[13,0,0],[16,0,0],[18,0,0],[21,0,0],[24,0,0],[26,0,0],[29,0,0],
+[32,0,0],[34,0,0],[37,0,0],[39,0,0],[42,0,0],[45,0,0],[47,0,0],[50,0,0],
+[53,0,0],[55,0,0],[58,0,0],[60,0,0],[63,0,0],[66,0,0],[68,0,0],[71,0,0],
+[74,0,0],[76,0,0],[79,0,0],[81,0,0],[84,0,0],[87,0,0],[89,0,0],[92,0,0],
+[95,0,0],[97,0,0],[100,0,0],[102,0,0],[105,0,0],[108,0,0],[110,0,0],[113,0,0],
+[116,0,0],[118,0,0],[121,0,0],[123,0,0],[126,0,0],[129,0,0],[131,0,0],[134,0,0],
+[137,0,0],[139,0,0],[142,0,0],[144,0,0],[147,0,0],[150,0,0],[152,0,0],[155,0,0],
+[158,0,0],[160,0,0],[163,0,0],[165,0,0],[168,0,0],[171,0,0],[173,0,0],[176,0,0],
+[179,0,0],[181,0,0],[184,0,0],[186,0,0],[189,0,0],[192,0,0],[194,0,0],[197,0,0],
+[200,0,0],[202,0,0],[205,0,0],[207,0,0],[210,0,0],[213,0,0],[215,0,0],[218,0,0],
+[221,0,0],[223,0,0],[226,0,0],[228,0,0],[231,0,0],[234,0,0],[236,0,0],[239,0,0],
+[242,0,0],[244,0,0],[247,0,0],[249,0,0],[252,0,0],[255,0,0],[255,2,0],[255,5,0],
+[255,8,0],[255,10,0],[255,13,0],[255,16,0],[255,18,0],[255,21,0],[255,23,0],[255,26,0],
+[255,29,0],[255,31,0],[255,34,0],[255,37,0],[255,39,0],[255,42,0],[255,44,0],[255,47,0],
+[255,50,0],[255,52,0],[255,55,0],[255,58,0],[255,60,0],[255,63,0],[255,65,0],[255,68,0],
+[255,71,0],[255,73,0],[255,76,0],[255,79,0],[255,81,0],[255,84,0],[255,86,0],[255,89,0],
+[255,92,0],[255,94,0],[255,97,0],[255,100,0],[255,102,0],[255,105,0],[255,107,0],[255,110,0],
+[255,113,0],[255,115,0],[255,118,0],[255,121,0],[255,123,0],[255,126,0],[255,128,0],[255,131,0],
+[255,134,0],[255,136,0],[255,139,0],[255,142,0],[255,144,0],[255,147,0],[255,149,0],[255,152,0],
+[255,155,0],[255,157,0],[255,160,0],[255,162,0],[255,165,0],[255,168,0],[255,170,0],[255,173,0],
+[255,176,0],[255,178,0],[255,181,0],[255,183,0],[255,186,0],[255,189,0],[255,191,0],[255,194,0],
+[255,197,0],[255,199,0],[255,202,0],[255,204,0],[255,207,0],[255,210,0],[255,212,0],[255,215,0],
+[255,218,0],[255,220,0],[255,223,0],[255,225,0],[255,228,0],[255,231,0],[255,233,0],[255,236,0],
+[255,239,0],[255,241,0],[255,244,0],[255,246,0],[255,249,0],[255,252,0],[255,254,0],[255,255,3],
+[255,255,7],[255,255,11],[255,255,15],[255,255,19],[255,255,23],[255,255,27],[255,255,31],[255,255,34],
+[255,255,38],[255,255,42],[255,255,46],[255,255,50],[255,255,54],[255,255,58],[255,255,62],[255,255,66],
+[255,255,70],[255,255,74],[255,255,78],[255,255,82],[255,255,86],[255,255,90],[255,255,94],[255,255,97],
+[255,255,101],[255,255,105],[255,255,109],[255,255,113],[255,255,117],[255,255,121],[255,255,125],[255,255,129],
+[255,255,133],[255,255,137],[255,255,141],[255,255,145],[255,255,149],[255,255,153],[255,255,157],[255,255,160],
+[255,255,164],[255,255,168],[255,255,172],[255,255,176],[255,255,180],[255,255,184],[255,255,188],[255,255,192],
+[255,255,196],[255,255,200],[255,255,204],[255,255,208],[255,255,212],[255,255,216],[255,255,220],[255,255,223],
+[255,255,227],[255,255,231],[255,255,235],[255,255,239],[255,255,243],[255,255,247],[255,255,251],[255,255,255],
+];
+
+// ====================================================================
+// Frangi vesselness filter — JavaScript (matches frangi_filter.py exactly)
+//
+// Key: image values are in [0, 255] range, NOT [0, 1].
+// Grayscale conversion uses equal-weight mean of RGB channels.
+// Both match how generate_figures.py loads and processes images.
 // ====================================================================
 
-let pyodide = null;
-let pyodideReady = false;
+function gaussianKernel1D(sigma) {
+  const r = Math.ceil(sigma * 4);
+  const k = new Float64Array(2 * r + 1);
+  let sum = 0;
+  for (let i = -r; i <= r; i++) {
+    k[i + r] = Math.exp(-0.5 * (i / sigma) ** 2);
+    sum += k[i + r];
+  }
+  for (let i = 0; i < k.length; i++) k[i] /= sum;
+  return { data: k, radius: r };
+}
+
+function gaussianSmooth(img, w, h, sigma) {
+  const kern = gaussianKernel1D(sigma);
+  const k = kern.data, r = kern.radius;
+  const tmp = new Float64Array(w * h);
+  const out = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) {
+        v += img[y * w + Math.min(Math.max(x + i, 0), w - 1)] * k[i + r];
+      }
+      tmp[y * w + x] = v;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) {
+        v += tmp[Math.min(Math.max(y + i, 0), h - 1) * w + x] * k[i + r];
+      }
+      out[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
+function gradient(img, w, h, axis) {
+  const out = new Float64Array(w * h);
+  if (axis === 1) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const xp = Math.min(x + 1, w - 1), xm = Math.max(x - 1, 0);
+        out[y * w + x] = (img[y * w + xp] - img[y * w + xm]) / (xp - xm || 1);
+      }
+    }
+  } else {
+    for (let y = 0; y < h; y++) {
+      const yp = Math.min(y + 1, h - 1), ym = Math.max(y - 1, 0);
+      for (let x = 0; x < w; x++) {
+        out[y * w + x] = (img[yp * w + x] - img[ym * w + x]) / (yp - ym || 1);
+      }
+    }
+  }
+  return out;
+}
+
+function maxFilter(img, w, h, size) {
+  const r = Math.floor(size / 2);
+  const tmp = new Float64Array(w * h);
+  const out = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let mx = -Infinity;
+      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
+      for (let xx = x0; xx <= x1; xx++) mx = Math.max(mx, img[y * w + xx]);
+      tmp[y * w + x] = mx;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
+    for (let x = 0; x < w; x++) {
+      let mx = -Infinity;
+      for (let yy = y0; yy <= y1; yy++) mx = Math.max(mx, tmp[yy * w + x]);
+      out[y * w + x] = mx;
+    }
+  }
+  return out;
+}
+
+function minFilter(img, w, h, size) {
+  const r = Math.floor(size / 2);
+  const tmp = new Float64Array(w * h);
+  const out = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let mn = Infinity;
+      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
+      for (let xx = x0; xx <= x1; xx++) mn = Math.min(mn, img[y * w + xx]);
+      tmp[y * w + x] = mn;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
+    for (let x = 0; x < w; x++) {
+      let mn = Infinity;
+      for (let yy = y0; yy <= y1; yy++) mn = Math.min(mn, tmp[yy * w + x]);
+      out[y * w + x] = mn;
+    }
+  }
+  return out;
+}
+
+function frangiAtScale(img, w, h, sigma, beta1, beta2, brightOnDark) {
+  const s2 = sigma * sigma;
+  const smoothed = gaussianSmooth(img, w, h, sigma);
+  const dx = gradient(smoothed, w, h, 1);
+  const dy = gradient(smoothed, w, h, 0);
+  const Hxx = gradient(dx, w, h, 1);
+  const Hyy = gradient(dy, w, h, 0);
+  const Hxy = gradient(dx, w, h, 0);
+  const n = w * h;
+  for (let i = 0; i < n; i++) { Hxx[i] *= s2; Hyy[i] *= s2; Hxy[i] *= s2; }
+
+  const response = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const trace = Hxx[i] + Hyy[i];
+    const det = Hxx[i] * Hyy[i] - Hxy[i] * Hxy[i];
+    const disc = Math.sqrt(Math.max((trace / 2) ** 2 - det, 0));
+    let eig1 = trace / 2 + disc;
+    let eig2 = trace / 2 - disc;
+    if (Math.abs(eig1) > Math.abs(eig2)) [eig1, eig2] = [eig2, eig1];
+    if (brightOnDark ? eig2 >= 0 : eig2 <= 0) continue;
+    const lambda2Safe = eig2 === 0 ? 1e-10 : eig2;
+    const S1 = (eig1 / lambda2Safe) ** 2;
+    const S2 = eig1 ** 2 + eig2 ** 2;
+    response[i] = Math.exp(-S1 / beta1) * (1 - Math.exp(-S2 / beta2));
+  }
+
+  // Local normalization (S3)
+  const kSize = 6 * sigma + 1;
+  const Imax = maxFilter(img, w, h, kSize);
+  const Imin = minFilter(img, w, h, kSize);
+  const normResponse = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const denom = Imax[i] - Imin[i];
+    if (denom > 0) {
+      const s3 = brightOnDark
+        ? (img[i] - Imin[i]) / denom
+        : (Imax[i] - img[i]) / denom;
+      normResponse[i] = response[i] * s3;
+    }
+  }
+
+  return { response, normResponse };
+}
+
+function dominantScaleFilter(responses, winningSigmas, nSigmas, w, h,
+                              outerSize, innerSize, threshold, weights) {
+  const n = w * h;
+  const vesselness = new Float64Array(n);
+  for (let i = 0; i < n; i++)
+    for (let s = 0; s < nSigmas; s++)
+      vesselness[i] = Math.max(vesselness[i], responses[s][i]);
+
+  const pad = Math.floor(outerSize / 2);
+  for (let y = 0; y < h; y += innerSize) {
+    for (let x = 0; x < w; x += innerSize) {
+      const counts = new Float64Array(nSigmas);
+      for (let dy = -pad; dy < outerSize - pad; dy++) {
+        const yy = Math.min(Math.max(y + dy, 0), h - 1);
+        for (let dx = -pad; dx < outerSize - pad; dx++) {
+          const xx = Math.min(Math.max(x + dx, 0), w - 1);
+          const idx = yy * w + xx;
+          counts[winningSigmas[idx]] += weights ? weights[idx] : 1;
+        }
+      }
+      let maxCount = 0;
+      for (let s = 0; s < nSigmas; s++) maxCount = Math.max(maxCount, counts[s]);
+      if (maxCount === 0) continue;
+      const minCount = maxCount * threshold;
+      const allowed = new Set();
+      for (let s = 0; s < nSigmas; s++) if (counts[s] >= minCount) allowed.add(s);
+      const iy2 = Math.min(y + innerSize, h), ix2 = Math.min(x + innerSize, w);
+      for (let iy = y; iy < iy2; iy++) {
+        for (let ix = x; ix < ix2; ix++) {
+          let best = 0;
+          for (const s of allowed) best = Math.max(best, responses[s][iy * w + ix]);
+          vesselness[iy * w + ix] = best;
+        }
+      }
+    }
+  }
+  return vesselness;
+}
+
+function frangi2D(img, w, h, {
+  sigmaMin = 2, sigmaMax = 20, beta1 = 0.5, beta2 = 15,
+  brightOnDark = false, dsThreshold = 0.5,
+} = {}) {
+  const sigmas = [];
+  for (let s = sigmaMin; s <= sigmaMax; s++) sigmas.push(s);
+  const nSigmas = sigmas.length;
+  const n = w * h;
+
+  const normResponses = [];
+  for (const sigma of sigmas) {
+    const { normResponse } = frangiAtScale(img, w, h, sigma, beta1, beta2, brightOnDark);
+    normResponses.push(normResponse);
+  }
+
+  // Winning sigmas + max response from normalized responses (matches Python default)
+  const winningSigmas = new Uint8Array(n);
+  const maxResponse = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let best = 0, bestS = 0;
+    for (let s = 0; s < nSigmas; s++) {
+      if (normResponses[s][i] > best) { best = normResponses[s][i]; bestS = s; }
+    }
+    winningSigmas[i] = bestS;
+    maxResponse[i] = best;
+  }
+
+  const outerSize = 6 * sigmas[nSigmas - 1] + 1;
+  const innerSize = 6 * sigmas[0] + 1;
+
+  return dominantScaleFilter(
+    normResponses, winningSigmas, nSigmas, w, h,
+    outerSize, innerSize, dsThreshold, maxResponse);
+}
+
+
+// ====================================================================
+// UI
+// ====================================================================
 
 const dropZone = document.getElementById("dropZone");
 const fileInput = document.getElementById("fileInput");
@@ -235,35 +499,7 @@ const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
-let loadedImageData = null;  // { gray: Float64Array, w, h }
-
-async function ensurePyodide() {
-  if (pyodideReady) return true;
-
-  try {
-    statusEl.textContent = "Loading Python environment (~10 MB, cached after first visit)...";
-    pyodide = await loadPyodide();
-    statusEl.textContent = "Installing NumPy, SciPy, and Matplotlib...";
-    await pyodide.loadPackage(["numpy", "scipy", "matplotlib"]);
-
-    statusEl.textContent = "Loading Frangi filter code...";
-    const response = await fetch("frangi_filter.py");
-    const code = await response.text();
-    pyodide.runPython(code);
-
-    pyodideReady = true;
-    return true;
-  } catch (e) {
-    statusEl.textContent = "Failed to load Python environment: " + e.message;
-    console.error(e);
-    return false;
-  }
-}
-
-
-// ====================================================================
-// Image loading
-// ====================================================================
+let loadedImageData = null;  // { img255, gray01, w, h }
 
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
@@ -282,22 +518,19 @@ function loadImageFromElement(img) {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(img, 0, 0);
   const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
-
-  // Keep RGBA in [0, 255] — Python will do the grayscale conversion
-  // exactly like generate_figures.py (np.mean, no division by 255)
   const n = img.width * img.height;
-  const rgbaFloat = new Float64Array(n * 4);
-  for (let i = 0; i < n * 4; i++) {
-    rgbaFloat[i] = rgba[i];
-  }
 
-  // Also keep a grayscale [0,1] copy for displaying the original
-  const gray = new Float64Array(n);
+  // Grayscale in [0, 255] using equal-weight mean — matches Python's np.mean(rgb, axis=2)
+  const img255 = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
+    img255[i] = (rgba[i*4] + rgba[i*4+1] + rgba[i*4+2]) / 3.0;
   }
 
-  loadedImageData = { rgbaFloat, gray, w: img.width, h: img.height };
+  // Also keep [0,1] grayscale for displaying the original
+  const gray01 = new Float64Array(n);
+  for (let i = 0; i < n; i++) gray01[i] = img255[i] / 255.0;
+
+  loadedImageData = { img255, gray01, w: img.width, h: img.height };
   runBtn.disabled = false;
   statusEl.textContent = `Loaded: ${img.width} x ${img.height} pixels`;
 }
@@ -315,7 +548,6 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
-// Example button
 exampleBtn.addEventListener("click", () => {
   statusEl.textContent = "Loading example DSA image...";
   const img = new Image();
@@ -324,29 +556,22 @@ exampleBtn.addEventListener("click", () => {
     loadImageFromElement(img);
     dropZone.querySelector("p").textContent = "dsa_sample.jpg (example)";
     document.getElementById("polarity").value = "dark";
-
-    // Auto-run
     runBtn.disabled = true;
     exampleBtn.disabled = true;
     resultsEl.innerHTML = "";
     exampleSection.style.display = "none";
-    runFilter();
+    statusEl.textContent = "Computing...";
+    requestAnimationFrame(() => setTimeout(runFilter, 50));
   };
   img.onerror = () => { statusEl.textContent = "Failed to load example image."; };
   img.src = "dsa_sample.jpg";
 });
 
-// Slider labels
 for (const id of ["sigmaMin", "sigmaMax", "beta1", "beta2", "dsThreshold"]) {
   const el = document.getElementById(id);
   const label = document.getElementById(id + "Val");
   el.addEventListener("input", () => { label.textContent = el.value; });
 }
-
-
-// ====================================================================
-// Run filter via Pyodide
-// ====================================================================
 
 runBtn.addEventListener("click", () => {
   if (!loadedImageData) return;
@@ -354,136 +579,72 @@ runBtn.addEventListener("click", () => {
   exampleBtn.disabled = true;
   resultsEl.innerHTML = "";
   exampleSection.style.display = "none";
-  runFilter();
+  statusEl.textContent = "Computing...";
+  requestAnimationFrame(() => setTimeout(runFilter, 50));
 });
 
-async function runFilter() {
-  if (!await ensurePyodide()) return;
+function runFilter() {
+  const { img255, gray01, w, h } = loadedImageData;
 
-  const { rgbaFloat, gray, w, h } = loadedImageData;
-  const sigmaMin = +document.getElementById("sigmaMin").value;
-  const sigmaMax = +document.getElementById("sigmaMax").value;
-  const beta1 = +document.getElementById("beta1").value;
-  const beta2 = +document.getElementById("beta2").value;
-  const brightOnDark = document.getElementById("polarity").value === "bright";
-  const dsThreshold = +document.getElementById("dsThreshold").value;
+  const t0 = performance.now();
+  const result = frangi2D(img255, w, h, {
+    sigmaMin: +document.getElementById("sigmaMin").value,
+    sigmaMax: +document.getElementById("sigmaMax").value,
+    beta1: +document.getElementById("beta1").value,
+    beta2: +document.getElementById("beta2").value,
+    brightOnDark: document.getElementById("polarity").value === "bright",
+    dsThreshold: +document.getElementById("dsThreshold").value,
+  });
+  const t1 = performance.now();
 
-  try {
-    statusEl.textContent = `Running filter on ${w}x${h} image (sigma ${sigmaMin}-${sigmaMax})...`;
-
-    // Pass RGBA image data to Python (values in [0, 255])
-    pyodide.globals.set("_img_flat", pyodide.toPy(Array.from(rgbaFloat)));
-    pyodide.globals.set("_img_w", w);
-    pyodide.globals.set("_img_h", h);
-    pyodide.globals.set("_sigma_min", sigmaMin);
-    pyodide.globals.set("_sigma_max", sigmaMax);
-    pyodide.globals.set("_beta1", beta1);
-    pyodide.globals.set("_beta2", beta2);
-    pyodide.globals.set("_bright_on_dark", brightOnDark);
-    pyodide.globals.set("_ds_threshold", dsThreshold);
-
-    const t0 = performance.now();
-
-    // Run the exact same Python code as generate_figures.py,
-    // then apply matplotlib's hot colormap for identical rendering.
-    //
-    // Critical: pass RGBA [0-255] and let Python do the grayscale
-    // conversion the same way as generate_figures.py (np.mean, no /255).
-    await pyodide.runPythonAsync(`
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Reconstruct RGBA from JS, then convert to grayscale exactly like
-# generate_figures.py: np.mean across channels, keeping [0, 255] range
-_rgba_img = np.array(_img_flat, dtype=np.float64).reshape(_img_h, _img_w, 4)
-_image = np.mean(_rgba_img[:, :, :3], axis=2)  # [0, 255] range, equal-weight grayscale
-
-_result = frangi_2d(
-    _image,
-    sigma_range=(_sigma_min, _sigma_max),
-    beta1=_beta1,
-    beta2=_beta2,
-    bright_on_dark=_bright_on_dark,
-    local_normalization=True,
-    dominant_scale=True,
-    dominant_scale_weighted=True,
-    dominant_scale_threshold=_ds_threshold,
-)
-
-# Apply matplotlib's hot colormap — identical to imshow(data, cmap='hot')
-_hot = plt.get_cmap('hot')
-_norm = plt.Normalize(vmin=_result.min(), vmax=_result.max())
-_rgba_out = _hot(_norm(_result))  # (H, W, 4) float in [0, 1]
-_rgba_uint8 = (_rgba_out * 255).astype(np.uint8).ravel().tolist()
-`);
-
-    const t1 = performance.now();
-
-    // Get RGBA pixels back from Python
-    const rgbaList = pyodide.globals.get("_rgba_uint8");
-    const rgbaArray = new Uint8ClampedArray(rgbaList.toJs());
-    rgbaList.destroy();
-
-    statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
-
-    // Show results
-    showResult("Original", gray, w, h, false);
-    showResultRGBA("Improved Frangi (S3 + Weighted Dominant Scale)", rgbaArray, w, h);
-
-  } catch (e) {
-    statusEl.textContent = "Error: " + e.message;
-    console.error(e);
-  }
+  statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
+  showGrayscale("Original", gray01, w, h);
+  showVesselness("Improved Frangi (S3 + Weighted Dominant Scale)", result, w, h);
 
   runBtn.disabled = false;
   exampleBtn.disabled = false;
 }
 
-
-// ====================================================================
-// Display with hot colormap
-// ====================================================================
-
-function showResult(title, grayData, w, h) {
+function showGrayscale(title, data, w, h) {
   const card = document.createElement("div");
   card.className = "result-card";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  card.appendChild(heading);
-
+  card.innerHTML = `<h3>${title}</h3>`;
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   card.appendChild(canvas);
   resultsEl.appendChild(card);
 
   const ctx = canvas.getContext("2d");
   const imgData = ctx.createImageData(w, h);
-  for (let i = 0; i < grayData.length; i++) {
-    const v = Math.round(grayData[i] * 255);
-    imgData.data[i * 4] = v;
-    imgData.data[i * 4 + 1] = v;
-    imgData.data[i * 4 + 2] = v;
-    imgData.data[i * 4 + 3] = 255;
+  for (let i = 0; i < data.length; i++) {
+    const v = Math.round(data[i] * 255);
+    imgData.data[i*4] = v; imgData.data[i*4+1] = v; imgData.data[i*4+2] = v; imgData.data[i*4+3] = 255;
   }
   ctx.putImageData(imgData, 0, 0);
 }
 
-function showResultRGBA(title, rgbaData, w, h) {
+function showVesselness(title, data, w, h) {
   const card = document.createElement("div");
   card.className = "result-card";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  card.appendChild(heading);
-
+  card.innerHTML = `<h3>${title}</h3>`;
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   card.appendChild(canvas);
   resultsEl.appendChild(card);
 
   const ctx = canvas.getContext("2d");
-  const imgData = new ImageData(rgbaData, w, h);
+  const imgData = ctx.createImageData(w, h);
+
+  // Normalize to [0, 255] then apply hot LUT — matches matplotlib's imshow(data, cmap='hot')
+  let maxVal = 0;
+  for (let i = 0; i < data.length; i++) maxVal = Math.max(maxVal, data[i]);
+  if (maxVal === 0) maxVal = 1;
+
+  for (let i = 0; i < data.length; i++) {
+    const idx = Math.round((data[i] / maxVal) * 255);
+    const [r, g, b] = HOT_LUT[idx];
+    imgData.data[i*4] = r; imgData.data[i*4+1] = g; imgData.data[i*4+2] = b; imgData.data[i*4+3] = 255;
+  }
   ctx.putImageData(imgData, 0, 0);
 }
 </script>
