@@ -17,3 +17,14 @@ Thumbs.db
 
 # Outline (personal notes)
 *.docx
+
+# External datasets
+DIAS/
+
+# Generated output
+synthetic_dsa/output/
+
+# Work in progress (not ready for public)
+synthetic_dsa/
+spatiotemporal_floodfill.py
+further_plan.md

@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frangi Vesselness Filter Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  header {
+    text-align: center;
+    padding: 2rem 1rem 1rem;
+    border-bottom: 1px solid #222;
+  }
+  header h1 { font-size: 1.6rem; font-weight: 600; color: #fff; }
+  header p { color: #888; margin-top: .4rem; font-size: .95rem; max-width: 700px; margin-inline: auto; }
+  header a { color: #6ea8fe; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+
+  .drop-zone {
+    max-width: 500px;
+    margin: 2rem auto;
+    padding: 2.5rem 1rem;
+    border: 2px dashed #444;
+    border-radius: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: #6ea8fe;
+    background: rgba(110,168,254,.06);
+  }
+  .drop-zone p { color: #aaa; font-size: .95rem; }
+  .drop-zone .icon { font-size: 2rem; margin-bottom: .5rem; }
+  .drop-zone input { display: none; }
+
+  .controls {
+    max-width: 700px;
+    margin: 1.5rem auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .8rem 1.5rem;
+    padding: 0 1rem;
+  }
+  .controls label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .85rem;
+    color: #bbb;
+  }
+  .controls input[type=range] { width: 120px; accent-color: #6ea8fe; }
+  .controls select { background: #1a1d27; color: #e0e0e0; border: 1px solid #333; padding: 2px 6px; border-radius: 4px; }
+  .controls .span-full { grid-column: 1 / -1; }
+
+  .btn-row {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+
+  .run-btn, .example-btn {
+    padding: .6rem 2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .run-btn { background: #6ea8fe; color: #000; }
+  .run-btn:hover { background: #8dbdff; }
+  .run-btn:disabled { background: #444; color: #888; cursor: not-allowed; }
+  .example-btn { background: #2d3748; color: #e0e0e0; border: 1px solid #444; }
+  .example-btn:hover { background: #3a4558; }
+
+  .example-section {
+    max-width: 1200px;
+    margin: 2rem auto;
+    text-align: center;
+    padding: 0 1rem;
+  }
+  .example-section h2 { font-size: 1.1rem; color: #aaa; margin-bottom: .8rem; font-weight: 500; }
+  .example-section img {
+    max-width: 100%;
+    border-radius: 10px;
+    border: 1px solid #222;
+  }
+  .example-section p { color: #666; font-size: .8rem; margin-top: .5rem; }
+
+  #status {
+    text-align: center;
+    color: #888;
+    font-size: .85rem;
+    margin: .5rem 0;
+    min-height: 1.2em;
+  }
+
+  .results {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .result-card {
+    background: #181b22;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #222;
+  }
+  .result-card h3 {
+    padding: .6rem .8rem;
+    font-size: .85rem;
+    font-weight: 500;
+    color: #aaa;
+    border-bottom: 1px solid #222;
+    background: #13151b;
+  }
+  .result-card canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+  }
+
+  footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #555;
+    font-size: .8rem;
+    border-top: 1px solid #222;
+    margin-top: 2rem;
+  }
+  footer a { color: #6ea8fe; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Frangi Vesselness Filter &mdash; Interactive Demo</h1>
+  <p>
+    Upload an angiography image to compare the standard Frangi filter with
+    two improvements: local intensity normalization (S3) and weighted
+    dominant scale filtering. Runs entirely in your browser &mdash; no data
+    leaves your machine.
+    <br><a href="https://github.com/ThabisoEpworthy/Frangi-Filter-Improvement---Master-Thesis">View on GitHub</a>
+  </p>
+</header>
+
+<div class="drop-zone" id="dropZone">
+  <div class="icon">&#128444;</div>
+  <p>Drop an image here or click to upload</p>
+  <input type="file" id="fileInput" accept="image/*">
+</div>
+
+<div class="controls">
+  <label>
+    Sigma min
+    <input type="range" id="sigmaMin" min="1" max="10" value="2" step="1">
+    <span id="sigmaMinVal">2</span>
+  </label>
+  <label>
+    Sigma max
+    <input type="range" id="sigmaMax" min="2" max="15" value="7" step="1">
+    <span id="sigmaMaxVal">7</span>
+  </label>
+  <label>
+    Beta 1 (blobness)
+    <input type="range" id="beta1" min="0.1" max="2.0" value="0.5" step="0.1">
+    <span id="beta1Val">0.5</span>
+  </label>
+  <label>
+    Beta 2 (structureness)
+    <input type="range" id="beta2" min="1" max="50" value="15" step="1">
+    <span id="beta2Val">15</span>
+  </label>
+  <label>
+    Vessel polarity
+    <select id="polarity">
+      <option value="bright">Bright on dark</option>
+      <option value="dark">Dark on bright</option>
+    </select>
+  </label>
+  <label>
+    Scale filter threshold
+    <input type="range" id="dsThreshold" min="0.1" max="0.9" value="0.5" step="0.05">
+    <span id="dsThresholdVal">0.5</span>
+  </label>
+</div>
+
+<div class="btn-row">
+  <button class="example-btn" id="exampleBtn">Try with example DSA</button>
+  <button class="run-btn" id="runBtn" disabled>Run Filter</button>
+</div>
+<div id="status"></div>
+
+<div class="results" id="results"></div>
+
+<div class="example-section" id="exampleSection">
+  <h2>Example output: Standard Frangi vs Improved Pipeline</h2>
+  <img src="example_output.png" alt="Comparison of standard Frangi filter, with local normalization, and with weighted dominant scale filtering">
+  <p>Left to right: Original DSA image, Standard Frangi, + Local Normalization (S3), + S3 + Weighted Dominant Scale filtering.
+  <br>Upload your own image above to see these results interactively.</p>
+</div>
+
+<footer>
+  Frangi vesselness filter with improvements. All computation runs client-side in JavaScript.
+  <br>Based on: Frangi et al., <em>Multiscale vessel enhancement filtering</em> (MICCAI 1998).
+  <br><a href="https://github.com/ThabisoEpworthy/Frangi-Filter-Improvement---Master-Thesis">Source code &amp; paper</a>
+</footer>
+
+<script>
+// ====================================================================
+// Frangi vesselness filter — pure JavaScript implementation
+// ====================================================================
+
+/**
+ * Gaussian 1D kernel (truncated at 4*sigma).
+ */
+function gaussianKernel1D(sigma) {
+  const r = Math.ceil(sigma * 4);
+  const k = new Float64Array(2 * r + 1);
+  let sum = 0;
+  for (let i = -r; i <= r; i++) {
+    k[i + r] = Math.exp(-0.5 * (i / sigma) ** 2);
+    sum += k[i + r];
+  }
+  for (let i = 0; i < k.length; i++) k[i] /= sum;
+  return { data: k, radius: r };
+}
+
+/**
+ * Separable 2D Gaussian convolution (zero-padded).
+ */
+function gaussianSmooth(img, w, h, sigma) {
+  const kern = gaussianKernel1D(sigma);
+  const k = kern.data, r = kern.radius;
+  const tmp = new Float64Array(w * h);
+  const out = new Float64Array(w * h);
+
+  // Horizontal pass
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) {
+        const xi = Math.min(Math.max(x + i, 0), w - 1);
+        v += img[y * w + xi] * k[i + r];
+      }
+      tmp[y * w + x] = v;
+    }
+  }
+  // Vertical pass
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let i = -r; i <= r; i++) {
+        const yi = Math.min(Math.max(y + i, 0), h - 1);
+        v += tmp[yi * w + x] * k[i + r];
+      }
+      out[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Compute gradient along axis (0=vertical, 1=horizontal) via central differences.
+ */
+function gradient(img, w, h, axis) {
+  const out = new Float64Array(w * h);
+  if (axis === 1) {
+    // Horizontal
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const xp = Math.min(x + 1, w - 1);
+        const xm = Math.max(x - 1, 0);
+        out[y * w + x] = (img[y * w + xp] - img[y * w + xm]) / (xp - xm || 1);
+      }
+    }
+  } else {
+    // Vertical
+    for (let y = 0; y < h; y++) {
+      const yp = Math.min(y + 1, h - 1);
+      const ym = Math.max(y - 1, 0);
+      for (let x = 0; x < w; x++) {
+        out[y * w + x] = (img[yp * w + x] - img[ym * w + x]) / (yp - ym || 1);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Local maximum / minimum filter (square window).
+ */
+function maxFilter(img, w, h, size) {
+  const r = Math.floor(size / 2);
+  const out = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let mx = -Infinity;
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = Math.min(Math.max(y + dy, 0), h - 1);
+        for (let dx = -r; dx <= r; dx++) {
+          const xx = Math.min(Math.max(x + dx, 0), w - 1);
+          mx = Math.max(mx, img[yy * w + xx]);
+        }
+      }
+      out[y * w + x] = mx;
+    }
+  }
+  return out;
+}
+
+function minFilter(img, w, h, size) {
+  const r = Math.floor(size / 2);
+  const out = new Float64Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let mn = Infinity;
+      for (let dy = -r; dy <= r; dy++) {
+        const yy = Math.min(Math.max(y + dy, 0), h - 1);
+        for (let dx = -r; dx <= r; dx++) {
+          const xx = Math.min(Math.max(x + dx, 0), w - 1);
+          mn = Math.min(mn, img[yy * w + xx]);
+        }
+      }
+      out[y * w + x] = mn;
+    }
+  }
+  return out;
+}
+
+/**
+ * Run Frangi filter at a single sigma. Returns { response, normResponse }.
+ */
+function frangiAtScale(img, w, h, sigma, beta1, beta2, brightOnDark, localNorm) {
+  const s2 = sigma * sigma;
+  const smoothed = gaussianSmooth(img, w, h, sigma);
+
+  // Hessian via second-order derivatives
+  const dx = gradient(smoothed, w, h, 1);
+  const dy = gradient(smoothed, w, h, 0);
+  const Hxx = gradient(dx, w, h, 1);
+  const Hyy = gradient(dy, w, h, 0);
+  const Hxy = gradient(dx, w, h, 0);
+
+  // Scale normalization
+  const n = w * h;
+  for (let i = 0; i < n; i++) { Hxx[i] *= s2; Hyy[i] *= s2; Hxy[i] *= s2; }
+
+  const response = new Float64Array(n);
+
+  for (let i = 0; i < n; i++) {
+    const trace = Hxx[i] + Hyy[i];
+    const det = Hxx[i] * Hyy[i] - Hxy[i] * Hxy[i];
+    const disc = Math.sqrt(Math.max((trace / 2) ** 2 - det, 0));
+
+    let eig1 = trace / 2 + disc;
+    let eig2 = trace / 2 - disc;
+
+    // Sort so |lambda1| <= |lambda2|
+    if (Math.abs(eig1) > Math.abs(eig2)) {
+      [eig1, eig2] = [eig2, eig1];
+    }
+
+    // Polarity check
+    if (brightOnDark ? eig2 >= 0 : eig2 <= 0) { response[i] = 0; continue; }
+
+    const lambda2Safe = eig2 === 0 ? 1e-10 : eig2;
+    const S1 = (eig1 / lambda2Safe) ** 2;
+    const S2 = eig1 ** 2 + eig2 ** 2;
+
+    response[i] = Math.exp(-S1 / beta1) * (1 - Math.exp(-S2 / beta2));
+  }
+
+  // Local normalization (S3)
+  let normResponse;
+  if (localNorm) {
+    const kSize = 6 * sigma + 1;
+    const Imax = maxFilter(img, w, h, kSize);
+    const Imin = minFilter(img, w, h, kSize);
+    normResponse = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const denom = Imax[i] - Imin[i];
+      if (denom > 0) {
+        const s3 = brightOnDark
+          ? (img[i] - Imin[i]) / denom
+          : (Imax[i] - img[i]) / denom;
+        normResponse[i] = response[i] * s3;
+      }
+    }
+  } else {
+    normResponse = response;
+  }
+
+  return { response, normResponse };
+}
+
+/**
+ * Dominant scale filter: suppress scale outliers using local consensus.
+ */
+function dominantScaleFilter(responses, winningSigmas, nSigmas, w, h,
+                              outerSize, innerSize, threshold, weights) {
+  const n = w * h;
+  const vesselness = new Float64Array(n);
+  // Start from max across scales
+  for (let i = 0; i < n; i++) {
+    for (let s = 0; s < nSigmas; s++) {
+      vesselness[i] = Math.max(vesselness[i], responses[s][i]);
+    }
+  }
+
+  const pad = Math.floor(outerSize / 2);
+
+  for (let y = 0; y < h; y += innerSize) {
+    for (let x = 0; x < w; x += innerSize) {
+      // Outer window: count sigma votes
+      const counts = new Float64Array(nSigmas);
+      for (let dy = -pad; dy < outerSize - pad; dy++) {
+        const yy = Math.min(Math.max(y + dy, 0), h - 1);
+        for (let dx = -pad; dx < outerSize - pad; dx++) {
+          const xx = Math.min(Math.max(x + dx, 0), w - 1);
+          const idx = yy * w + xx;
+          const s = winningSigmas[idx];
+          if (weights) {
+            counts[s] += weights[idx];
+          } else {
+            counts[s] += 1;
+          }
+        }
+      }
+
+      let maxCount = 0;
+      for (let s = 0; s < nSigmas; s++) maxCount = Math.max(maxCount, counts[s]);
+      if (maxCount === 0) continue;
+
+      const minCount = maxCount * threshold;
+      const allowed = new Set();
+      for (let s = 0; s < nSigmas; s++) {
+        if (counts[s] >= minCount) allowed.add(s);
+      }
+
+      // Inner region: restrict to allowed scales
+      const iy2 = Math.min(y + innerSize, h);
+      const ix2 = Math.min(x + innerSize, w);
+      for (let iy = y; iy < iy2; iy++) {
+        for (let ix = x; ix < ix2; ix++) {
+          let best = 0;
+          for (const s of allowed) {
+            best = Math.max(best, responses[s][iy * w + ix]);
+          }
+          vesselness[iy * w + ix] = best;
+        }
+      }
+    }
+  }
+  return vesselness;
+}
+
+/**
+ * Full Frangi 2D filter.
+ * mode: "plain" | "normalized" | "full"
+ */
+function frangi2D(img, w, h, {
+  sigmaMin = 2, sigmaMax = 7,
+  beta1 = 0.5, beta2 = 15,
+  brightOnDark = true,
+  mode = "plain",
+  dsThreshold = 0.5,
+} = {}) {
+  const sigmas = [];
+  for (let s = sigmaMin; s <= sigmaMax; s++) sigmas.push(s);
+  const nSigmas = sigmas.length;
+  const n = w * h;
+
+  const localNorm = mode === "normalized" || mode === "full";
+  const doDominant = mode === "full";
+
+  const rawResponses = [];
+  const normResponses = [];
+
+  for (const sigma of sigmas) {
+    const { response, normResponse } = frangiAtScale(
+      img, w, h, sigma, beta1, beta2, brightOnDark, localNorm);
+    rawResponses.push(response);
+    normResponses.push(normResponse);
+  }
+
+  const outputResponses = localNorm ? normResponses : rawResponses;
+
+  if (doDominant) {
+    // Determine winning sigmas from raw responses (pre-norm)
+    const analysisResponses = rawResponses;
+    const winningSigmas = new Uint8Array(n);
+    const maxResponse = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestS = 0;
+      for (let s = 0; s < nSigmas; s++) {
+        if (analysisResponses[s][i] > best) {
+          best = analysisResponses[s][i];
+          bestS = s;
+        }
+      }
+      winningSigmas[i] = bestS;
+      maxResponse[i] = best;
+    }
+
+    const outerSize = 6 * sigmas[nSigmas - 1] + 1;
+    const innerSize = 6 * sigmas[0] + 1;
+
+    return dominantScaleFilter(
+      outputResponses, winningSigmas, nSigmas, w, h,
+      outerSize, innerSize, dsThreshold, maxResponse);
+  } else {
+    // Max across scales
+    const vesselness = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      for (let s = 0; s < nSigmas; s++) {
+        vesselness[i] = Math.max(vesselness[i], outputResponses[s][i]);
+      }
+    }
+    return vesselness;
+  }
+}
+
+
+// ====================================================================
+// UI
+// ====================================================================
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const runBtn = document.getElementById("runBtn");
+const exampleBtn = document.getElementById("exampleBtn");
+const statusEl = document.getElementById("status");
+const resultsEl = document.getElementById("results");
+const exampleSection = document.getElementById("exampleSection");
+
+let loadedImage = null;  // { data: Float64Array, w, h }
+
+// --- Drop zone ---
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+// --- Example button ---
+exampleBtn.addEventListener("click", () => {
+  statusEl.textContent = "Loading example DSA image...";
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
+
+    const n = img.width * img.height;
+    const gray = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
+    }
+
+    loadedImage = { data: gray, w: img.width, h: img.height };
+    runBtn.disabled = false;
+    statusEl.textContent = `Loaded example: ${img.width} x ${img.height} pixels`;
+    dropZone.querySelector("p").textContent = "dsa_sample.jpg (example)";
+
+    // Auto-set polarity to dark-on-bright for the DSA example
+    document.getElementById("polarity").value = "dark";
+
+    // Auto-run
+    runBtn.disabled = true;
+    statusEl.textContent = "Computing (this may take 10-30s for large images)...";
+    resultsEl.innerHTML = "";
+    exampleSection.style.display = "none";
+    requestAnimationFrame(() => setTimeout(runFilter, 50));
+  };
+  img.onerror = () => { statusEl.textContent = "Failed to load example image."; };
+  img.src = "dsa_sample.jpg";
+});
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      // Convert to grayscale Float64Array
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
+
+      const n = img.width * img.height;
+      const gray = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
+      }
+
+      loadedImage = { data: gray, w: img.width, h: img.height };
+      runBtn.disabled = false;
+      statusEl.textContent = `Loaded: ${img.width} x ${img.height} pixels`;
+      dropZone.querySelector("p").textContent = file.name;
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// --- Slider labels ---
+for (const id of ["sigmaMin", "sigmaMax", "beta1", "beta2", "dsThreshold"]) {
+  const el = document.getElementById(id);
+  const label = document.getElementById(id + "Val");
+  el.addEventListener("input", () => { label.textContent = el.value; });
+}
+
+// --- Run ---
+runBtn.addEventListener("click", () => {
+  if (!loadedImage) return;
+  runBtn.disabled = true;
+  statusEl.textContent = "Computing...";
+  resultsEl.innerHTML = "";
+
+  exampleSection.style.display = "none";
+  // Defer to allow UI update
+  requestAnimationFrame(() => setTimeout(runFilter, 50));
+});
+
+function runFilter() {
+  const { data, w, h } = loadedImage;
+  const opts = {
+    sigmaMin: +document.getElementById("sigmaMin").value,
+    sigmaMax: +document.getElementById("sigmaMax").value,
+    beta1: +document.getElementById("beta1").value,
+    beta2: +document.getElementById("beta2").value,
+    brightOnDark: document.getElementById("polarity").value === "bright",
+    dsThreshold: +document.getElementById("dsThreshold").value,
+  };
+
+  const t0 = performance.now();
+
+  const plain = frangi2D(data, w, h, { ...opts, mode: "plain" });
+  const t1 = performance.now();
+
+  const normalized = frangi2D(data, w, h, { ...opts, mode: "normalized" });
+  const t2 = performance.now();
+
+  const full = frangi2D(data, w, h, { ...opts, mode: "full" });
+  const t3 = performance.now();
+
+  const times = [t1-t0, t2-t1, t3-t2].map(t => (t/1000).toFixed(1));
+  statusEl.textContent = `Done in ${((t3-t0)/1000).toFixed(1)}s (plain: ${times[0]}s, +S3: ${times[1]}s, +S3+DS: ${times[2]}s)`;
+
+  // Show results
+  showResult("Original", data, w, h, false);
+  showResult("Standard Frangi", plain, w, h, true);
+  showResult("+ Local Normalization (S3)", normalized, w, h, true);
+  showResult("+ S3 + Weighted Dominant Scale", full, w, h, true);
+
+  runBtn.disabled = false;
+}
+
+function showResult(title, data, w, h, isVesselness) {
+  const card = document.createElement("div");
+  card.className = "result-card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  card.appendChild(heading);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  card.appendChild(canvas);
+  resultsEl.appendChild(card);
+
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(w, h);
+
+  // Normalize vesselness for display
+  let maxVal = 0;
+  if (isVesselness) {
+    for (let i = 0; i < data.length; i++) maxVal = Math.max(maxVal, data[i]);
+    if (maxVal === 0) maxVal = 1;
+  }
+
+  for (let i = 0; i < data.length; i++) {
+    let v;
+    if (isVesselness) {
+      v = Math.round((data[i] / maxVal) * 255);
+    } else {
+      v = Math.round(data[i] * 255);
+    }
+    imgData.data[i * 4] = v;
+    imgData.data[i * 4 + 1] = v;
+    imgData.data[i * 4 + 2] = v;
+    imgData.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+</script>
+</body>
+</html>
