@@ -563,7 +563,7 @@ const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
 let loadedImage = null;  // { data: Float64Array, w, h }
-const MAX_PIXELS = 600 * 600;  // auto-downscale above this
+const MAX_PIXELS = Infinity;  // no downscaling — full resolution
 
 // --- Drop zone ---
 dropZone.addEventListener("click", () => fileInput.click());
@@ -590,7 +590,7 @@ exampleBtn.addEventListener("click", () => {
 
     // Auto-run
     runBtn.disabled = true;
-    statusEl.textContent = "Computing (may take 15-30s)...";
+    statusEl.textContent = "Computing (may take 30-60s at full resolution)...";
     resultsEl.innerHTML = "";
     exampleSection.style.display = "none";
     requestAnimationFrame(() => setTimeout(runFilter, 50));
