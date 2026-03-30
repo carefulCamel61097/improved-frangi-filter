@@ -243,8 +243,8 @@ async function ensurePyodide() {
   try {
     statusEl.textContent = "Loading Python environment (~10 MB, cached after first visit)...";
     pyodide = await loadPyodide();
-    statusEl.textContent = "Installing NumPy and SciPy...";
-    await pyodide.loadPackage(["numpy", "scipy"]);
+    statusEl.textContent = "Installing NumPy, SciPy, and Matplotlib...";
+    await pyodide.loadPackage(["numpy", "scipy", "matplotlib"]);
 
     statusEl.textContent = "Loading Frangi filter code...";
     const response = await fetch("frangi_filter.py");
@@ -376,9 +376,11 @@ async function runFilter() {
 
     const t0 = performance.now();
 
-    // Run the exact same Python code as generate_figures.py
+    // Run the exact same Python code as generate_figures.py,
+    // then apply matplotlib's hot colormap for identical rendering
     await pyodide.runPythonAsync(`
 import numpy as np
+import matplotlib.pyplot as plt
 
 _image = np.array(_img_flat, dtype=np.float64).reshape(_img_h, _img_w)
 
@@ -394,21 +396,25 @@ _result = frangi_2d(
     dominant_scale_threshold=_ds_threshold,
 )
 
-_result_flat = _result.ravel().tolist()
+# Apply matplotlib's hot colormap — identical to imshow(data, cmap='hot')
+_hot = plt.get_cmap('hot')
+_norm = plt.Normalize(vmin=_result.min(), vmax=_result.max())
+_rgba = _hot(_norm(_result))  # (H, W, 4) float in [0, 1]
+_rgba_uint8 = (_rgba * 255).astype(np.uint8).ravel().tolist()
 `);
 
     const t1 = performance.now();
 
-    // Get result back from Python
-    const resultList = pyodide.globals.get("_result_flat");
-    const resultArray = new Float64Array(resultList.toJs());
-    resultList.destroy();
+    // Get RGBA pixels back from Python
+    const rgbaList = pyodide.globals.get("_rgba_uint8");
+    const rgbaArray = new Uint8ClampedArray(rgbaList.toJs());
+    rgbaList.destroy();
 
     statusEl.textContent = `Done in ${((t1-t0)/1000).toFixed(1)}s`;
 
     // Show results
     showResult("Original", gray, w, h, false);
-    showResult("Improved Frangi (S3 + Weighted Dominant Scale)", resultArray, w, h, true);
+    showResultRGBA("Improved Frangi (S3 + Weighted Dominant Scale)", rgbaArray, w, h);
 
   } catch (e) {
     statusEl.textContent = "Error: " + e.message;
@@ -424,20 +430,7 @@ _result_flat = _result.ravel().tolist()
 // Display with hot colormap
 // ====================================================================
 
-/**
- * "Hot" colormap matching matplotlib's "hot".
- * 0.0 = black, ~0.33 = red, ~0.66 = yellow, 1.0 = white.
- */
-function hotColormap(t) {
-  let r, g, b;
-  // These breakpoints match matplotlib's hot colormap
-  r = Math.min(1, t / 0.3652);
-  g = Math.max(0, Math.min(1, (t - 0.3652) / 0.3652));
-  b = Math.max(0, Math.min(1, (t - 0.7304) / 0.2696));
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-}
-
-function showResult(title, data, w, h, isVesselness) {
+function showResult(title, grayData, w, h) {
   const card = document.createElement("div");
   card.className = "result-card";
   const heading = document.createElement("h3");
@@ -452,28 +445,31 @@ function showResult(title, data, w, h, isVesselness) {
 
   const ctx = canvas.getContext("2d");
   const imgData = ctx.createImageData(w, h);
-
-  let maxVal = 0;
-  if (isVesselness) {
-    for (let i = 0; i < data.length; i++) maxVal = Math.max(maxVal, data[i]);
-    if (maxVal === 0) maxVal = 1;
-  }
-
-  for (let i = 0; i < data.length; i++) {
-    if (isVesselness) {
-      const t = data[i] / maxVal;
-      const [r, g, b] = hotColormap(t);
-      imgData.data[i * 4] = r;
-      imgData.data[i * 4 + 1] = g;
-      imgData.data[i * 4 + 2] = b;
-    } else {
-      const v = Math.round(data[i] * 255);
-      imgData.data[i * 4] = v;
-      imgData.data[i * 4 + 1] = v;
-      imgData.data[i * 4 + 2] = v;
-    }
+  for (let i = 0; i < grayData.length; i++) {
+    const v = Math.round(grayData[i] * 255);
+    imgData.data[i * 4] = v;
+    imgData.data[i * 4 + 1] = v;
+    imgData.data[i * 4 + 2] = v;
     imgData.data[i * 4 + 3] = 255;
   }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function showResultRGBA(title, rgbaData, w, h) {
+  const card = document.createElement("div");
+  card.className = "result-card";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  card.appendChild(heading);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  card.appendChild(canvas);
+  resultsEl.appendChild(card);
+
+  const ctx = canvas.getContext("2d");
+  const imgData = new ImageData(rgbaData, w, h);
   ctx.putImageData(imgData, 0, 0);
 }
 </script>
