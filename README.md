@@ -75,6 +75,12 @@ The full pipeline — standard Frangi → local normalization → weighted domin
 
 ![Final comparison](figures/07_final_comparison.png)
 
+## Interactive Demo
+
+Try the filter in your browser — no installation needed: **[Live Demo](https://carefulCamel61097.github.io/improved-frangi-filter/)**
+
+Upload any angiography image and see the standard Frangi, + local normalization, and + weighted dominant scale results side by side.
+
 ## Usage
 
 ```python

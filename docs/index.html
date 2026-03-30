@@ -188,8 +188,8 @@
   <label>
     Vessel polarity
     <select id="polarity">
-      <option value="bright">Bright on dark</option>
       <option value="dark">Dark on bright</option>
+      <option value="bright">Bright on dark</option>
     </select>
   </label>
   <label>
@@ -302,21 +302,29 @@ function gradient(img, w, h, axis) {
 }
 
 /**
- * Local maximum / minimum filter (square window).
+ * Local maximum / minimum filter (square window) — separable for speed.
+ * Two 1D passes (horizontal then vertical) instead of one 2D pass.
+ * O(n * size) instead of O(n * size^2).
  */
 function maxFilter(img, w, h, size) {
   const r = Math.floor(size / 2);
+  const tmp = new Float64Array(w * h);
   const out = new Float64Array(w * h);
+  // Horizontal pass
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let mx = -Infinity;
-      for (let dy = -r; dy <= r; dy++) {
-        const yy = Math.min(Math.max(y + dy, 0), h - 1);
-        for (let dx = -r; dx <= r; dx++) {
-          const xx = Math.min(Math.max(x + dx, 0), w - 1);
-          mx = Math.max(mx, img[yy * w + xx]);
-        }
-      }
+      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
+      for (let xx = x0; xx <= x1; xx++) mx = Math.max(mx, img[y * w + xx]);
+      tmp[y * w + x] = mx;
+    }
+  }
+  // Vertical pass
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
+    for (let x = 0; x < w; x++) {
+      let mx = -Infinity;
+      for (let yy = y0; yy <= y1; yy++) mx = Math.max(mx, tmp[yy * w + x]);
       out[y * w + x] = mx;
     }
   }
@@ -325,17 +333,23 @@ function maxFilter(img, w, h, size) {
 
 function minFilter(img, w, h, size) {
   const r = Math.floor(size / 2);
+  const tmp = new Float64Array(w * h);
   const out = new Float64Array(w * h);
+  // Horizontal pass
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let mn = Infinity;
-      for (let dy = -r; dy <= r; dy++) {
-        const yy = Math.min(Math.max(y + dy, 0), h - 1);
-        for (let dx = -r; dx <= r; dx++) {
-          const xx = Math.min(Math.max(x + dx, 0), w - 1);
-          mn = Math.min(mn, img[yy * w + xx]);
-        }
-      }
+      const x0 = Math.max(x - r, 0), x1 = Math.min(x + r, w - 1);
+      for (let xx = x0; xx <= x1; xx++) mn = Math.min(mn, img[y * w + xx]);
+      tmp[y * w + x] = mn;
+    }
+  }
+  // Vertical pass
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(y - r, 0), y1 = Math.min(y + r, h - 1);
+    for (let x = 0; x < w; x++) {
+      let mn = Infinity;
+      for (let yy = y0; yy <= y1; yy++) mn = Math.min(mn, tmp[yy * w + x]);
       out[y * w + x] = mn;
     }
   }
@@ -549,6 +563,7 @@ const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
 let loadedImage = null;  // { data: Float64Array, w, h }
+const MAX_PIXELS = 400 * 400;  // auto-downscale above this
 
 // --- Drop zone ---
 dropZone.addEventListener("click", () => fileInput.click());
@@ -567,22 +582,7 @@ exampleBtn.addEventListener("click", () => {
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0);
-    const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
-
-    const n = img.width * img.height;
-    const gray = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
-    }
-
-    loadedImage = { data: gray, w: img.width, h: img.height };
-    runBtn.disabled = false;
-    statusEl.textContent = `Loaded example: ${img.width} x ${img.height} pixels`;
+    loadImageFromElement(img);
     dropZone.querySelector("p").textContent = "dsa_sample.jpg (example)";
 
     // Auto-set polarity to dark-on-bright for the DSA example
@@ -590,7 +590,7 @@ exampleBtn.addEventListener("click", () => {
 
     // Auto-run
     runBtn.disabled = true;
-    statusEl.textContent = "Computing (this may take 10-30s for large images)...";
+    statusEl.textContent = "Computing...";
     resultsEl.innerHTML = "";
     exampleSection.style.display = "none";
     requestAnimationFrame(() => setTimeout(runFilter, 50));
@@ -599,28 +599,45 @@ exampleBtn.addEventListener("click", () => {
   img.src = "dsa_sample.jpg";
 });
 
+function loadImageFromElement(img) {
+  let drawW = img.width, drawH = img.height;
+  const totalPixels = drawW * drawH;
+  let downscaled = false;
+
+  if (totalPixels > MAX_PIXELS) {
+    const scale = Math.sqrt(MAX_PIXELS / totalPixels);
+    drawW = Math.round(drawW * scale);
+    drawH = Math.round(drawH * scale);
+    downscaled = true;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = drawW;
+  canvas.height = drawH;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, drawW, drawH);
+  const rgba = ctx.getImageData(0, 0, drawW, drawH).data;
+
+  const n = drawW * drawH;
+  const gray = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
+  }
+
+  loadedImage = { data: gray, w: drawW, h: drawH };
+  runBtn.disabled = false;
+  const sizeNote = downscaled
+    ? `${img.width}x${img.height} -> ${drawW}x${drawH} (downscaled for speed)`
+    : `${drawW} x ${drawH} pixels`;
+  statusEl.textContent = `Loaded: ${sizeNote}`;
+}
+
 function handleFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     const img = new Image();
     img.onload = () => {
-      // Convert to grayscale Float64Array
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
-
-      const n = img.width * img.height;
-      const gray = new Float64Array(n);
-      for (let i = 0; i < n; i++) {
-        gray[i] = (rgba[i*4] * 0.299 + rgba[i*4+1] * 0.587 + rgba[i*4+2] * 0.114) / 255;
-      }
-
-      loadedImage = { data: gray, w: img.width, h: img.height };
-      runBtn.disabled = false;
-      statusEl.textContent = `Loaded: ${img.width} x ${img.height} pixels`;
+      loadImageFromElement(img);
       dropZone.querySelector("p").textContent = file.name;
     };
     img.src = reader.result;
