@@ -5,6 +5,8 @@ Two improvements to the standard [Frangi vesselness filter](https://link.springe
 1. **Local intensity normalization** (from the [qTICI paper](https://journals.sagepub.com/doi/full/10.1177/1747493020909632)) — suppresses blur caused by the multiscale approach
 2. **Weighted dominant scale filtering** (new) — suppresses false responses where clusters of small vessels are mistaken for large ones
 
+![Final comparison](figures/07_final_comparison.png)
+
 ## Background
 
 The Frangi filter computes a "vesselness" response at each pixel by analyzing the eigenvalues of the Hessian matrix at multiple Gaussian scales. At every pixel and scale level, the response is:
