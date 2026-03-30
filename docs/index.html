@@ -172,8 +172,8 @@
   </label>
   <label>
     Sigma max
-    <input type="range" id="sigmaMax" min="2" max="15" value="7" step="1">
-    <span id="sigmaMaxVal">7</span>
+    <input type="range" id="sigmaMax" min="2" max="25" value="20" step="1">
+    <span id="sigmaMaxVal">20</span>
   </label>
   <label>
     Beta 1 (blobness)
@@ -515,8 +515,8 @@ function frangi2D(img, w, h, {
   const outputResponses = localNorm ? normResponses : rawResponses;
 
   if (doDominant) {
-    // Determine winning sigmas from raw responses (pre-norm)
-    const analysisResponses = rawResponses;
+    // Determine winning sigmas from post-norm responses
+    const analysisResponses = normResponses;
     const winningSigmas = new Uint8Array(n);
     const maxResponse = new Float64Array(n);
     for (let i = 0; i < n; i++) {
@@ -563,7 +563,7 @@ const resultsEl = document.getElementById("results");
 const exampleSection = document.getElementById("exampleSection");
 
 let loadedImage = null;  // { data: Float64Array, w, h }
-const MAX_PIXELS = 512 * 512;  // auto-downscale above this
+const MAX_PIXELS = 600 * 600;  // auto-downscale above this
 
 // --- Drop zone ---
 dropZone.addEventListener("click", () => fileInput.click());
@@ -590,7 +590,7 @@ exampleBtn.addEventListener("click", () => {
 
     // Auto-run
     runBtn.disabled = true;
-    statusEl.textContent = "Computing...";
+    statusEl.textContent = "Computing (may take 15-30s)...";
     resultsEl.innerHTML = "";
     exampleSection.style.display = "none";
     requestAnimationFrame(() => setTimeout(runFilter, 50));
